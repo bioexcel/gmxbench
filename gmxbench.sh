@@ -61,7 +61,7 @@ usage_submit()
 
 function parse_options()
 {
-    PARSED_ARGUMENTS=$(getopt -o '' -a -l 'bench:,exe:,smt:,mpi:,omp:,nodes:,gpu,walltime:,nsteps:,resetstep:,resethway,npme:,pme:,ntomp:,ntomp_pme:,nb:,bonded:,update:,pmefft:,dlb:,tunepme:,extra_info:,machine:,help:,v,noconfout' -- "$@")
+    PARSED_ARGUMENTS=$(getopt -o '' -a -l 'bench:,exe:,smt:,mpi:,omp:,nodes:,gpu,walltime:,nsteps:,resetstep:,resethway,npme:,pme:,ntomp:,ntomp_pme:,nb:,bonded:,update:,pmefft:,dlb:,tunepme:,tune_pme:extra_info:,machine:,help:,v,noconfout' -- "$@")
     VALID_ARGUMENTS=$?
     if [ "$VALID_ARGUMENTS" != "0" ] || [ "$#" == "0" ]; then
 	usage
@@ -149,6 +149,9 @@ function set_options()
 	    --tunepme)
 		TUNEPME="$2"
 		shift 2 ;;
+	    --tune_pme)
+		TUNE_PME=$2
+		shift 2 ;;	
 	    --extra_info)
 		EXTRA_INFO="$2"
 		shift 2 ;;
@@ -396,16 +399,6 @@ function scan()
     done
 }
 
-
-
-
-
-
-function tune_pme()
-{
-    init_params
-    TUNE_PME=true
-}
 
 
 
