@@ -61,7 +61,7 @@ usage_submit()
 
 function parse_options()
 {
-    PARSED_ARGUMENTS=$(getopt -o '' -a -l 'bench:,exe:,smt:,mpi:,omp:,nodes:,gpu,walltime:,nsteps:,resetstep:,resethway,npme:,pme:,ntomp:,ntomp_pme:,nb:,bonded:,update:,pmefft:,dlb:,tunepme:,tune_pme:extra_info:,machine:,help:,v,noconfout' -- "$@")
+    PARSED_ARGUMENTS=$(getopt -o '' -a -l 'bench:,exe:,smt:,mpi:,omp:,nodes:,gpu,walltime:,nsteps:,resetstep:,resethway,npme:,pme:,ntomp:,ntomp_pme:,nb:,bonded:,update:,pmefft:,dlb:,tunepme:,tune_pme,extra_info:,machine:,help:,v,noconfout' -- "$@")
     VALID_ARGUMENTS=$?
     if [ "$VALID_ARGUMENTS" != "0" ] || [ "$#" == "0" ]; then
 	usage
@@ -117,7 +117,7 @@ function set_options()
 		RESETSTEP="$2"
 		shift 2 ;;
 	    --resethway)
-		RESETHWAY=""
+		RESETHWAY=true
 		shift ;;
 	    --pme)
 		PME="$2"
@@ -150,8 +150,8 @@ function set_options()
 		TUNEPME="$2"
 		shift 2 ;;
 	    --tune_pme)
-		TUNE_PME=$2
-		shift 2 ;;	
+		TUNE_PME=true
+		shift  ;;	
 	    --extra_info)
 		EXTRA_INFO="$2"
 		shift 2 ;;
@@ -182,7 +182,7 @@ function init_params()
     if [ -n "$RANKSPERNODE" ] && [ -n "$NODES" ]; then
 	TOTALRANKS=$(($RANKSPERNODE*$NODES))
     fi
-
+    
     # Ensure npme set to 1 if offloading PME to GPU
     if [ "$PME" = 'gpu' ] && [ "$TOTALRANKS" != "1" ]; then
 	NPME_CMD='-npme 1 '
@@ -207,8 +207,7 @@ function init_params()
     if test -n "$NODES"; then
 	NODES_STR="_$(printf "%02d" $NODES)nodes";
     fi
-
-    PARALLEL_EXECUTION=${SMT_STR}${RANKSPERNODE_STR}${THREADSPERRANK_STR}${NODES_STR}
+    
     
     # GPU offload options
     if [ "$GPU" == true ]; then
@@ -252,6 +251,7 @@ function init_params()
     fi
     
     ALWAYS="-noconfout -v"
+    PARALLEL_EXECUTION=${SMT_STR}${RANKSPERNODE_STR}${THREADSPERRANK_STR}${NODES_STR}
     MDRUN_CMD=${THREADSPERRANK_CMD}${GPU_OFFLOAD_CMD}${NTOMP_PME_CMD}${NSTEPS_CMD}${RESETSTEP_CMD}${RESETHWAY_CMD}${DLB_CMD}${TUNEPME_CMD}${ALWAYS}
     MDRUN_STR=${GPU_OFFLOAD_STR}${NTOMP_PME_STR}${NSTEPS_STR}${RESETSTEP_STR}${RESETHWAY_STR}${DLB_STR}${TUNEPME_STR}
     BENCHMARK_NAME=`basename ${BENCHMARK} .tpr`
@@ -287,7 +287,7 @@ function submit()
     echo "Walltime           : $WALLTIME"
 
     mkdir $WORKDIR
-    if [ "TUNE_PME" == true ]; then
+    if [ "$TUNE_PME" == true ]; then
 	cp $BENCHMARK $WORKDIR
     fi
     
@@ -331,8 +331,12 @@ function set_rank_options()
 # Submit multiple GROMACS jobs to scan a range of hybrid MPI x OpenMP options
 function scan()
 {
-    set_smt_options
-    
+    if test -z "$SMT"; then
+	set_smt_options
+    else
+	SMT_OPTIONS=($SMT)
+    fi
+	
     for SMT in "${SMT_OPTIONS[@]}"; do
 
 	set_rank_options
