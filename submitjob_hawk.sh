@@ -2,11 +2,23 @@
 # HAWK
 #=============
 
+GMX_PATH=${EXE%"gmx_mpi"}
+
 OMPLACE_OPTIONS="-nt $THREADSPERRANK"
 
 if [ "$SMT" == "2" ]; then
     OMPLACE_OPTIONS=${OMPLACE_OPTIONS}" -ht compact"
 fi
+
+
+if [ "$TUNE_PME" == true ]; then
+    LAUNCH_CMD="gmx_mpi tune_pme -np $TOTALRANKS -mdrun 'omplace $OMPLACE_OPTIONS -v gmx_mpi mdrun' -s ${BENCHMARK_NAME}.tpr $MDRUN_CMD"
+else
+    LAUNCH_CMD="mpirun -np $TOTALRANKS omplace $OMPLACE_OPTIONS -v gmx_mpi mdrun -s $BENCHMARK $MDRUN_CMD"
+fi
+
+
+
 
 # Write job script
 cat > job.script <<EOF
@@ -16,13 +28,15 @@ cat > job.script <<EOF
 #PBS -l walltime=$WALLTIME             
 
 # Change to the directory that the job was submitted from
-cd \$PBS_O_WORKDIR
+cd $PWD
 
 module list
 
+export PATH=$GMX_PATH:\$PATH
+
 export OMP_NUM_THREADS=$THREADSPERRANK
 
-mpirun -np $TOTALRANKS omplace $OMPLACE_OPTIONS -v $EXE mdrun -s $BENCHMARK $MDRUN_CMD
+$LAUNCH_CMD
 
 rm -f *.trr *.cpt core*
 
