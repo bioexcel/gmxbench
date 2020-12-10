@@ -492,9 +492,6 @@ function extract_from_logfile()
 #
 function descriptor_to_options()
 {
-    
-    # CHANGE TO PICK UP ALL BASED ON POSITION LIKE FOR GPU SETTINGS 
-    
     local descriptor=$1
     descriptor_remainder=${descriptor#"$BENCHMARK_NAME"}
     local smt_position=`echo $descriptor_remainder | grep -ob "smt" | cut -d ":" -f 1`
@@ -553,15 +550,15 @@ function extract()
 {
     init_params
     rm -f ${BENCHMARK_NAME}*.dat
-
-    for descriptor in ${BENCHMARK_NAME}${SMT_STR}${MDRUN_STR}${EXTRA_INFO}
+    
+    for descriptor in ${BENCHMARK_NAME}${SMT_STR}*${MDRUN_STR}${EXTRA_INFO}*
     do
 	if test -f $descriptor/md.log; then
 	    logfile=$descriptor/md.log
 	    if grep -q "Finished" $logfile; then
 		descriptor_to_options $descriptor
 		init_params
-		RUN_DESCRIPTOR=${BENCHMARK_NAME}${SMT_STR}${RANKSPERNODE_STR}${THREADSPERRANK_STR}${MDRUN_STR}
+		RUN_DESCRIPTOR=${BENCHMARK_NAME}${SMT_STR}${RANKSPERNODE_STR}${THREADSPERRANK_STR}${MDRUN_STR}${EXTRA_INFO}  # i.e. leaving number of nodes unspecified
 		extract_from_logfile $logfile		
 	    else
 		echo "SKIPPING: Simulation $logfile did not finish"
@@ -619,7 +616,7 @@ function plot()
 
     echo -n "Plotting"
     
-    for descriptor in `ls -r ${BENCHMARK_NAME}${SMT_STR}*nsperday.dat`
+    for descriptor in `ls -r ${BENCHMARK_NAME}${SMT_STR}${MDRUN_STR}${EXTRA_INFO}nsperday.dat`
     do
 	echo -n "."
 	descriptor=`basename $descriptor "-nsperday.dat"`
