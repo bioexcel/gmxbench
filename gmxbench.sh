@@ -613,16 +613,16 @@ function plot()
     
     GNUPLOT_BASENAME=${BENCHMARK_NAME}${SMT_STR}${MDRUN_STR}${EXTRA_INFO}
     gnuplot_init
-
-    echo -n "Plotting"
     
-    for descriptor in `ls -r ${BENCHMARK_NAME}${SMT_STR}${MDRUN_STR}${EXTRA_INFO}nsperday.dat`
+    echo -n "Plotting "
+    
+    for descriptor in `ls -r ${BENCHMARK_NAME}${SMT_STR}*${MDRUN_STR}${EXTRA_INFO}-nsperday.dat`
     do
 	echo -n "."
 	descriptor=`basename $descriptor "-nsperday.dat"`
 	descriptor_to_options $descriptor
 	init_params
-
+	
 	offload_legend=""
 	if [ "$GPU" == true ]; then
 	    offload_legend="CPU only"
@@ -639,7 +639,7 @@ function plot()
     	#echo "\"${descriptor}-ddli.dat\" with ${GNUPLOT_LINESTYLE} title '$RANKSPERNODE mpi x $THREADSPERRANK omp$offload_legend',\\" >> $GNUPLOT_FILE_DDLI
     	#echo "\"${descriptor}-pmeli.dat\" with ${GNUPLOT_LINESTYLE} title '$RANKSPERNODE mpi x $THREADSPERRANK omp$offload_legend',\\" >> $GNUPLOT_FILE_PMELI
     done
-
+    
     truncate -s-3 ${GNUPLOT_BASENAME}*.gnuplot
     for file in ${GNUPLOT_BASENAME}*.gnuplot; do echo "" >> $file; done
     
