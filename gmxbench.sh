@@ -8,6 +8,9 @@
 #
 
 
+
+
+
 usage()
 {
     echo -e "\t usage: 
@@ -15,6 +18,11 @@ usage()
 	     "
     exit 2
 }
+
+
+
+
+
 
 
 
@@ -59,6 +67,11 @@ usage_submit()
 
 
 
+
+
+
+
+
 function parse_options()
 {
     PARSED_ARGUMENTS=$(getopt -o '' -a -l 'bench:,exe:,smt:,mpi:,omp:,nodes:,gpu,walltime:,nsteps:,resetstep:,resethway,npme:,pme:,ntomp:,ntomp_pme:,nb:,bonded:,update:,pmefft:,dlb:,tunepme:,tune_pme,extra_info:,machine:,help:,v,noconfout' -- "$@")
@@ -67,6 +80,11 @@ function parse_options()
 	usage
     fi
 }
+
+
+
+
+
 
 
 
@@ -177,6 +195,7 @@ function set_options()
 
 
 
+
 function init_params()
 {
     if [ -n "$RANKSPERNODE" ] && [ -n "$NODES" ]; then
@@ -267,6 +286,52 @@ function init_params()
 
 
 
+#
+# parse descriptor in directory or file name
+#
+function descriptor_to_options()
+{
+    local descriptor=$1
+    descriptor_remainder=${descriptor#"$BENCHMARK_NAME"}
+    local smt_position=`echo $descriptor_remainder | grep -ob "smt" | cut -d ":" -f 1`
+    SMT=`echo ${descriptor_remainder:$((smt_position-1)):1} | cut -d '_' -f 1`
+    local rankspernode_position=`echo $descriptor_remainder | grep -ob "mpi" | cut -d ":" -f 1`
+    RANKSPERNODE=`echo ${descriptor_remainder:$((rankspernode_position-3)):3} | cut -d '_' -f 1`
+    RANKSPERNODE=$((10#$RANKSPERNODE)) # strip leading zeros
+    local threadsperrank_position=`echo $descriptor_remainder | grep -ob "omp" | cut -d ":" -f 1`
+    THREADSPERRANK=`echo ${descriptor_remainder:$((threadsperrank_position-3)):3} | cut -d '_' -f 1`
+    THREADSPERRANK=$((10#$THREADSPERRANK)) # strip leading zeros
+    local nodes_position=`echo $descriptor_remainder | grep -ob "nodes" | cut -d ":" -f 1`
+    if test -n "$nodes_position"; then
+	NODES=`echo ${descriptor_remainder:$((nodes_position-2)):2} | cut -d '_' -f 1`
+	NODES=$((10#$NODES))
+    fi
+    
+    if [ "$GPU" == true ]; then
+	local nb_position=`echo $descriptor_remainder | grep -ob "nb" | cut -d ":" -f 1`
+	local nb=`echo ${descriptor_remainder:$nb_position} | cut -d '_' -f 1`
+	NB=`echo ${nb:2} | tr [A-Z] [a-z]` # CPU or GPU
+	local pme_position=`echo $descriptor_remainder | grep -ob "_pme" | cut -d ":" -f 1`
+	local pme=`echo ${descriptor_remainder:$((pme_position+1))} | cut -d '_' -f 1`
+	PME=`echo ${pme:3} | tr [A-Z] [a-z]` # CPU or GPU
+	local bonded_position=`echo $descriptor_remainder | grep -ob "bonded" | cut -d ":" -f 1`
+	local bonded=`echo ${descriptor_remainder:$bonded_position} | cut -d '_' -f 1`
+	BONDED=`echo ${bonded:6} | tr [A-Z] [a-z]` # CPU or GPU
+	local update_position=`echo $descriptor_remainder | grep -ob "update" | cut -d ":" -f 1`
+	local update=`echo ${descriptor_remainder:$update_position} | cut -d '_' -f 1`
+	UPDATE=`echo ${update:6} | tr [A-Z] [a-z]` # CPU or GPU
+    fi
+}
+
+
+
+
+
+
+
+
+
+
 # Submit a single GROMACS job
 function submit()
 {
@@ -274,7 +339,6 @@ function submit()
 	usage_submit
     fi
     
-    init_params
     DAYTIME=`date +%j%H%M`
     WORKDIR=${RUN_DESCRIPTOR}-${DAYTIME}
     
@@ -344,8 +408,6 @@ function scan()
 	for N in "${RANKS[@]}"; do
 	    RANKSPERNODE=$(($N*$SMT))
 	    THREADSPERRANK=$(($LOGICALCORES/$RANKSPERNODE))
-
-	    init_params
 	    
 	    if [ "$GPU" == true ]; then
 		
@@ -353,12 +415,14 @@ function scan()
 		PME="cpu"
 		BONDED="cpu"
 		UPDATE="cpu"
+		init_params
 		submit
 		
 		NB="gpu"
 		PME="cpu"
 		BONDED="cpu"
 		UPDATE="cpu"
+		init_params
 		submit
 
 		# For PME offloading, check if PP ranks contains too large prime factor
@@ -374,12 +438,14 @@ function scan()
 		PME="gpu"
 		BONDED="cpu"
 		UPDATE="cpu"
+		init_params
 		submit
 		
 		NB="gpu"
 		PME="gpu"
 		BONDED="gpu"
 		UPDATE="cpu"
+		init_params
 		submit
 		
 		# -update gpu only works with one rank
@@ -388,20 +454,27 @@ function scan()
 		    PME="gpu"
 		    BONDED="gpu"
 		    UPDATE="gpu"
+		    init_params
 		    submit
 
 		    NB="gpu"
 		    PME="gpu"
 		    BONDED="cpu"
 		    UPDATE="gpu"
+		    init_params
 		    submit
 		fi
 	    else # no GPU
+		init_params
 		submit
 	    fi
 	done
     done
 }
+
+
+
+
 
 
 
@@ -422,13 +495,20 @@ function set_smt_options()
 
 
 
+
+
+
+
+
 #
 # Extract results from a single md.log file
 #
-function extract_from_logfile()
+function extract_logfile()
 {
-    local logfile=$1
-    echo "Extracting results from $logfile"
+    local descriptor=${1}
+    rm -f ${descriptor}/*.dat
+    local logfile=${descriptor}/md.log
+
     local line=`grep "Running on " $logfile`
     local nodes=`echo $line | tr -s ' ' | cut -d ' ' -f 3`
     
@@ -441,11 +521,11 @@ function extract_from_logfile()
     
     line=`grep "Part of the total run time spent waiting due to load imbalance:" $logfile`
     local dd_load_imbalance=`echo $line | tr -s ' ' | cut -d ' ' -f 13 | cut -d '%' -f 1`
-    echo -e "$nodes \t $dd_load_imbalance" >>  ${RUN_DESCRIPTOR}-ddli.dat
+    echo -e "$nodes \t $dd_load_imbalance" >>  ${descriptor}/ddli.dat
     
     line=`grep "Part of the total run time spent waiting due to PP/PME imbalance:" $logfile`
     local pme_load_imbalance=`echo $line | tr -s ' ' | cut -d ' ' -f 13 | cut -d '%' -f 1`
-    echo -e "$nodes \t $pme_load_imbalance" >> ${RUN_DESCRIPTOR}-pmeli.dat
+    echo -e "$nodes \t $pme_load_imbalance" >> ${descriptor}/pmeli.dat
     
     local total_load_imbalance=0
     
@@ -474,55 +554,56 @@ function extract_from_logfile()
     fi
     
     # wtime_min = hypothetical min walltime if no load imbalance for gnuplot as lower bound 'error bar'
-    echo -e "$nodes \t $wtime \t $wtime_min \t $wtime" >> ${RUN_DESCRIPTOR}-wtime.dat
+    echo -e "$nodes \t $wtime \t $wtime_min \t $wtime" >> ${descriptor}/wtime.dat
     
     # nsperday_max = hypothetical max ns/day if no load imbalance for gnuplot as upper bound 'error bar'
-    echo -e "$nodes \t $nsperday \t $nsperday \t $nsperday_max" >> ${RUN_DESCRIPTOR}-nsperday.dat
+    echo -e "$nodes \t $nsperday \t $nsperday \t $nsperday_max" >> ${descriptor}/nsperday.dat
     
     # hoursperns = hypothetical min hours/ns if no load imbalance for gnuplot as lower bound 'error bar'
-    echo -e "$nodes \t $hoursperns \t $hoursperns_min \t $hoursperns" >>  ${RUN_DESCRIPTOR}-hoursperns.dat
+    echo -e "$nodes \t $hoursperns \t $hoursperns_min \t $hoursperns" >>  ${descriptor}/hoursperns.dat
 }
 
 
 
 
 
-#
-# parse descriptor in directory or file name
-#
-function descriptor_to_options()
+
+
+
+
+
+function average_over_runs()
 {
-    local descriptor=$1
-    descriptor_remainder=${descriptor#"$BENCHMARK_NAME"}
-    local smt_position=`echo $descriptor_remainder | grep -ob "smt" | cut -d ":" -f 1`
-    SMT=`echo ${descriptor_remainder:$((smt_position-1)):1} | cut -d '_' -f 1`
-    local rankspernode_position=`echo $descriptor_remainder | grep -ob "mpi" | cut -d ":" -f 1`
-    RANKSPERNODE=`echo ${descriptor_remainder:$((rankspernode_position-3)):3} | cut -d '_' -f 1`
-    RANKSPERNODE=$((10#$RANKSPERNODE)) # strip leading zeros
-    local threadsperrank_position=`echo $descriptor_remainder | grep -ob "omp" | cut -d ":" -f 1`
-    THREADSPERRANK=`echo ${descriptor_remainder:$((threadsperrank_position-3)):3} | cut -d '_' -f 1`
-    THREADSPERRANK=$((10#$THREADSPERRANK)) # strip leading zeros
-    local nodes_position=`echo $descriptor_remainder | grep -ob "nodes" | cut -d ":" -f 1`
-    if test -n "$nodes_position"; then
-	NODES=`echo ${descriptor_remainder:$((nodes_position-2)):2} | cut -d '_' -f 1`
-	NODES=$((10#$NODES))
+    local run_descriptor=${1}
+    local successful_identical_runs=$(grep "Finished" ${run_descriptor}*/md.log | wc -l)
+    local extracted_datafiles=$(ls ${run_descriptor}*/*.dat | wc -l)
+    if [ "${extracted_datafiles}" != "$((5*$successful_identical_runs))" ]; then
+ 	echo "incomplete extraction detected for ${run_descriptor}"
     fi
     
-    if [ "$GPU" == true ]; then
-	local nb_position=`echo $descriptor_remainder | grep -ob "nb" | cut -d ":" -f 1`
-	local nb=`echo ${descriptor_remainder:$nb_position} | cut -d '_' -f 1`
-	NB=`echo ${nb:2} | tr [A-Z] [a-z]` # CPU or GPU
-	local pme_position=`echo $descriptor_remainder | grep -ob "_pme" | cut -d ":" -f 1`
-	local pme=`echo ${descriptor_remainder:$((pme_position+1))} | cut -d '_' -f 1`
-	PME=`echo ${pme:3} | tr [A-Z] [a-z]` # CPU or GPU
-	local bonded_position=`echo $descriptor_remainder | grep -ob "bonded" | cut -d ":" -f 1`
-	local bonded=`echo ${descriptor_remainder:$bonded_position} | cut -d '_' -f 1`
-	BONDED=`echo ${bonded:6} | tr [A-Z] [a-z]` # CPU or GPU
-	local update_position=`echo $descriptor_remainder | grep -ob "update" | cut -d ":" -f 1`
-	local update=`echo ${descriptor_remainder:$update_position} | cut -d '_' -f 1`
-	UPDATE=`echo ${update:6} | tr [A-Z] [a-z]` # CPU or GPU
-    fi
+    local nsperday=0
+    local nsperday_max=0
+    local nodes=0
+    
+    for identical_run in ${run_descriptor}*
+    do
+	nodes=$(cut -s -f 1 ${identical_run}/nsperday.dat)
+	nsperday=$(echo "${nsperday} + $(cut -s -f 2 ${identical_run}/nsperday.dat)" | bc -l)
+	nsperday_max=$(echo "${nsperday_max} + $(cut -s -f 4 ${identical_run}/nsperday.dat)" | bc -l)
+    done
+    
+    nsperday=$(echo "${nsperday}/${successful_identical_runs}" | bc -l)
+    nsperday_max=$(echo "${nsperday_max}/${successful_identical_runs}" | bc -l)
+    descriptor_to_options ${run_descriptor}
+    init_params
+    local target_datafile=${BENCHMARK_NAME}${SMT_STR}${RANKSPERNODE_STR}${THREADSPERRANK_STR}${MDRUN_STR}${EXTRA_INFO}  # i.e. just leaving number of nodes unspecified
+    echo -e "$nodes \t $nsperday \t $nsperday \t $nsperday_max" >> ${target_datafile}-nsperday.dat
 }
+
+
+
+
+
 
 
 
@@ -548,24 +629,42 @@ function descriptor_to_options()
 #
 function extract()
 {
-    init_params
-    rm -f ${BENCHMARK_NAME}*.dat
+    shopt -s extglob
     
-    for descriptor in ${BENCHMARK_NAME}${SMT_STR}*${MDRUN_STR}${EXTRA_INFO}*
+    for run in ${BENCHMARK_NAME}${SMT_STR}*${MDRUN_STR}${EXTRA_INFO}*
     do
-	if test -f $descriptor/md.log; then
-	    logfile=$descriptor/md.log
-	    if grep -q "Finished" $logfile; then
-		descriptor_to_options $descriptor
-		init_params
-		RUN_DESCRIPTOR=${BENCHMARK_NAME}${SMT_STR}${RANKSPERNODE_STR}${THREADSPERRANK_STR}${MDRUN_STR}${EXTRA_INFO}  # i.e. leaving number of nodes unspecified
-		extract_from_logfile $logfile		
-	    else
-		echo "SKIPPING: Simulation $logfile did not finish"
-	    fi
+	run_descriptor=${run%%"-"+([0-9])}  # strip unique DAYTIME identifier
+	if [ "${run_descriptor}" == "${already_extracted}" ]; then
+	    continue
+	else
+	    for identical_run in ${run_descriptor}-* 
+	    do
+		echo "Extracting ${identical_run}"
+		logfile=${identical_run}/md.log
+		if test -f ${logfile}; then
+		    if grep -q "Finished" $logfile; then
+			descriptor_to_options ${run}
+			extract_logfile ${run}
+		    else
+			echo "SKIPPING: simulation ${identical_run} did not finish"
+		    fi
+		else
+		    echo "SKIPPING: No md.log file in ${identical_run}"
+		fi
+	    done
+	    
+	    average_over_runs ${run_descriptor}
+	    already_extracted=${run_descriptor}
 	fi
     done
+    
+
 }
+
+
+
+
+
 
 
 
@@ -601,13 +700,18 @@ function gnuplot_init()
 
 
 
+
+
+
+
+
+
+
 #
 # Run extract first 
 #
 function plot()
 {
-    init_params
-    
     # Find largest nsperday across all values to set same y-axis scale on each plot
     nsperday_max=`cut -s -f 4 ${BENCHMARK_NAME}*-nsperday.dat | sort -nr | head -n 1`
     
@@ -633,11 +737,11 @@ function plot()
 	fi
 	
 	
-	#echo "\"${descriptor}-wtime.dat\" with ${GNUPLOT_LINESTYLE} title '$RANKSPERNODE mpi x $THREADSPERRANK omp$offload_legend',\\" >> $GNUPLOT_FILE_WTIME
-	echo "\"${descriptor}-nsperday.dat\" with ${GNUPLOT_LINESTYLE} title '$RANKSPERNODE mpi x $THREADSPERRANK omp$offload_legend',\\" >> $GNUPLOT_FILE_NSPERDAY
-	#echo "\"${descriptor}-hoursperns.dat\" with ${GNUPLOT_LINESTYLE} title '$RANKSPERNODE mpi x $THREADSPERRANK omp$offload_legend',\\" >> $GNUPLOT_FILE_HOURSPERNS
-    	#echo "\"${descriptor}-ddli.dat\" with ${GNUPLOT_LINESTYLE} title '$RANKSPERNODE mpi x $THREADSPERRANK omp$offload_legend',\\" >> $GNUPLOT_FILE_DDLI
-    	#echo "\"${descriptor}-pmeli.dat\" with ${GNUPLOT_LINESTYLE} title '$RANKSPERNODE mpi x $THREADSPERRANK omp$offload_legend',\\" >> $GNUPLOT_FILE_PMELI
+	#echo "\"${descriptor}-wtime.dat\" with ${GNUPLOT_LINESTYLE} title '$RANKSPERNODE mpi x $THREADSPERRANK omp${offload_legend}',\\" >> $GNUPLOT_FILE_WTIME
+	echo "\"${descriptor}-nsperday.dat\" with ${GNUPLOT_LINESTYLE} title '$RANKSPERNODE mpi x $THREADSPERRANK omp${offload_legend}',\\" >> $GNUPLOT_FILE_NSPERDAY
+	#echo "\"${descriptor}-hoursperns.dat\" with ${GNUPLOT_LINESTYLE} title '$RANKSPERNODE mpi x $THREADSPERRANK omp${offload_legend}',\\" >> $GNUPLOT_FILE_HOURSPERNS
+    	#echo "\"${descriptor}-ddli.dat\" with ${GNUPLOT_LINESTYLE} title '$RANKSPERNODE mpi x $THREADSPERRANK omp${offload_legend}',\\" >> $GNUPLOT_FILE_DDLI
+    	#echo "\"${descriptor}-pmeli.dat\" with ${GNUPLOT_LINESTYLE} title '$RANKSPERNODE mpi x $THREADSPERRANK omp${offload_legend}',\\" >> $GNUPLOT_FILE_PMELI
     done
     
     truncate -s-3 ${GNUPLOT_BASENAME}*.gnuplot
@@ -656,8 +760,6 @@ function plot()
 
 
 
-
-
 #==================
 #
 #      Main
@@ -666,6 +768,7 @@ function plot()
 FUNCTIONALITY=$1
 parse_options "$@"
 set_options
+init_params
 $FUNCTIONALITY
 
 
