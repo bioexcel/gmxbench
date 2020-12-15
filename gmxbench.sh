@@ -521,11 +521,11 @@ function extract_logfile()
     
     line=`grep "Part of the total run time spent waiting due to load imbalance:" $logfile`
     local dd_load_imbalance=`echo $line | tr -s ' ' | cut -d ' ' -f 13 | cut -d '%' -f 1`
-    echo -e "$nodes \t $dd_load_imbalance" >>  ${descriptor}/ddli.dat
+    #echo -e "$nodes \t $dd_load_imbalance" >>  ${descriptor}/ddli.dat
     
     line=`grep "Part of the total run time spent waiting due to PP/PME imbalance:" $logfile`
     local pme_load_imbalance=`echo $line | tr -s ' ' | cut -d ' ' -f 13 | cut -d '%' -f 1`
-    echo -e "$nodes \t $pme_load_imbalance" >> ${descriptor}/pmeli.dat
+    #echo -e "$nodes \t $pme_load_imbalance" >> ${descriptor}/pmeli.dat
     
     local total_load_imbalance=0
     
@@ -536,31 +536,31 @@ function extract_logfile()
 	total_load_imbalance=`echo "scale=2; $total_load_imbalance + $pme_load_imbalance" | bc -l`
     fi
     
-    local wtime_min=0
+    #local wtime_min=0
     local nsperday_max=0
-    local hoursperns_min=0
+    #local hoursperns_min=0
     
     if [ "$total_load_imbalance" != 0 ]; then
-	local wtime_imbalance=`echo "scale=2; $wtime*($total_load_imbalance/100.0)" | bc -l`
-	wtime_min=`echo "scale=2; $wtime - $wtime_imbalance" | bc -l`
+	#local wtime_imbalance=`echo "scale=2; $wtime*($total_load_imbalance/100.0)" | bc -l`
+	#wtime_min=`echo "scale=2; $wtime - $wtime_imbalance" | bc -l`
 	local nsperday_imbalance=`echo "scale=2; $nsperday*($total_load_imbalance/100.0)" | bc -l`
 	nsperday_max=`echo "scale=2; $nsperday + $nsperday_imbalance" | bc -l`
-	local hoursperns_imbalance=`echo "scale=2; $hoursperns*($total_load_imbalance/100.0)" | bc -l`
-	hoursperns_min=`echo "scale=2; $hoursperns - $hoursperns_imbalance" | bc -l`
+	#local hoursperns_imbalance=`echo "scale=2; $hoursperns*($total_load_imbalance/100.0)" | bc -l`
+	#hoursperns_min=`echo "scale=2; $hoursperns - $hoursperns_imbalance" | bc -l`
     else
-	wtime_min=$wtime
+	#wtime_min=$wtime
 	nsperday_max=$nsperday
-	hoursperns_min=$hoursperns
+	#hoursperns_min=$hoursperns
     fi
     
     # wtime_min = hypothetical min walltime if no load imbalance for gnuplot as lower bound 'error bar'
-    echo -e "$nodes \t $wtime \t $wtime_min \t $wtime" >> ${descriptor}/wtime.dat
+    #echo -e "$nodes \t $wtime \t $wtime_min \t $wtime" >> ${descriptor}/wtime.dat
     
     # nsperday_max = hypothetical max ns/day if no load imbalance for gnuplot as upper bound 'error bar'
     echo -e "$nodes \t $nsperday \t $nsperday \t $nsperday_max" >> ${descriptor}/nsperday.dat
     
     # hoursperns = hypothetical min hours/ns if no load imbalance for gnuplot as lower bound 'error bar'
-    echo -e "$nodes \t $hoursperns \t $hoursperns_min \t $hoursperns" >>  ${descriptor}/hoursperns.dat
+    #echo -e "$nodes \t $hoursperns \t $hoursperns_min \t $hoursperns" >>  ${descriptor}/hoursperns.dat
 }
 
 
@@ -576,28 +576,32 @@ function average_over_runs()
 {
     local run_descriptor=${1}
     local successful_identical_runs=$(grep "Finished" ${run_descriptor}*/md.log | wc -l)
-    local extracted_datafiles=$(ls ${run_descriptor}*/*.dat | wc -l)
-    if [ "${extracted_datafiles}" != "$((5*$successful_identical_runs))" ]; then
- 	echo "incomplete extraction detected for ${run_descriptor}"
+
+    if [ "${successful_identical_runs}" -gt "0" ]; then
+	local extracted_datafiles=$(ls ${run_descriptor}*/nsperday.dat | wc -l)
+	
+	if [ "${extracted_datafiles}" != "$(($successful_identical_runs))" ]; then
+ 	    echo "incomplete extraction detected for ${run_descriptor}"
+	fi
+	
+	local nsperday=0
+	local nsperday_max=0
+	local nodes=0
+	
+	for identical_run in ${run_descriptor}*
+	do
+	    nodes=$(cut -s -f 1 ${identical_run}/nsperday.dat)
+	    nsperday=$(echo "${nsperday} + $(cut -s -f 2 ${identical_run}/nsperday.dat)" | bc -l)
+	    nsperday_max=$(echo "${nsperday_max} + $(cut -s -f 4 ${identical_run}/nsperday.dat)" | bc -l)
+	done
+	
+	nsperday=$(echo "${nsperday}/${successful_identical_runs}" | bc -l)
+	nsperday_max=$(echo "${nsperday_max}/${successful_identical_runs}" | bc -l)
+	descriptor_to_options ${run_descriptor}
+	init_params
+	local target_datafile=${BENCHMARK_NAME}${SMT_STR}${RANKSPERNODE_STR}${THREADSPERRANK_STR}${MDRUN_STR}${EXTRA_INFO}  # i.e. just leaving number of nodes unspecified
+	echo -e "$nodes \t $nsperday \t $nsperday \t $nsperday_max" >> ${target_datafile}-nsperday.dat
     fi
-    
-    local nsperday=0
-    local nsperday_max=0
-    local nodes=0
-    
-    for identical_run in ${run_descriptor}*
-    do
-	nodes=$(cut -s -f 1 ${identical_run}/nsperday.dat)
-	nsperday=$(echo "${nsperday} + $(cut -s -f 2 ${identical_run}/nsperday.dat)" | bc -l)
-	nsperday_max=$(echo "${nsperday_max} + $(cut -s -f 4 ${identical_run}/nsperday.dat)" | bc -l)
-    done
-    
-    nsperday=$(echo "${nsperday}/${successful_identical_runs}" | bc -l)
-    nsperday_max=$(echo "${nsperday_max}/${successful_identical_runs}" | bc -l)
-    descriptor_to_options ${run_descriptor}
-    init_params
-    local target_datafile=${BENCHMARK_NAME}${SMT_STR}${RANKSPERNODE_STR}${THREADSPERRANK_STR}${MDRUN_STR}${EXTRA_INFO}  # i.e. just leaving number of nodes unspecified
-    echo -e "$nodes \t $nsperday \t $nsperday \t $nsperday_max" >> ${target_datafile}-nsperday.dat
 }
 
 
@@ -630,27 +634,26 @@ function average_over_runs()
 function extract()
 {
     shopt -s extglob
+
+    rm -f ${BENCHMARK_NAME}${SMT_STR}*${MDRUN_STR}${EXTRA_INFO}*.dat
     
     for run in ${BENCHMARK_NAME}${SMT_STR}*${MDRUN_STR}${EXTRA_INFO}*
     do
 	run_descriptor=${run%%"-"+([0-9])}  # strip unique DAYTIME identifier
+	
 	if [ "${run_descriptor}" == "${already_extracted}" ]; then
 	    continue
 	else
 	    for identical_run in ${run_descriptor}-* 
 	    do
 		echo "Extracting ${identical_run}"
-		logfile=${identical_run}/md.log
-		if test -f ${logfile}; then
-		    if grep -q "Finished" $logfile; then
-			descriptor_to_options ${run}
-			extract_logfile ${run}
-		    else
-			echo "SKIPPING: simulation ${identical_run} did not finish"
-		    fi
+		if grep -q "Finished" ${identical_run}/md.log; then
+		    descriptor_to_options ${identical_run}
+		    extract_logfile ${identical_run}
 		else
-		    echo "SKIPPING: No md.log file in ${identical_run}"
-		fi
+		    echo "SKIPPING: simulation ${identical_run} did not finish"
+		    continue
+		fi    
 	    done
 	    
 	    average_over_runs ${run_descriptor}
