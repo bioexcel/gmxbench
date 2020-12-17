@@ -685,8 +685,10 @@ function extract()
 function gnuplot_init()
 {
     GNUPLOT_LINESTYLE="yerrorlines linewidth 2"
+    GNUPLOT_BASENAME=${RUN_DESCRIPTOR//${GPU_OFFLOAD_STR}}
+        
     local GNUPLOT_XLABEL="set xlabel 'nodes'; "
-    local GNUPLOT_TERMINAL="set terminal svg size 640,480 name '$GNUPLOT_BASENAME'; "
+    local GNUPLOT_TERMINAL="set terminal svg size 640,480 name '${GNUPLOT_BASENAME}'; "
     if [ "$GPU" == true ]; then
 	local GNUPLOT_KEY="set key left top Left; "
     else
@@ -698,7 +700,6 @@ function gnuplot_init()
     local GNUPLOT_GRID="set grid; "
     local GNUPLOT_SET=${GNUPLOT_XLABEL}${GNUPLOT_TERMINAL}${GNUPLOT_KEY}${GNUPLOT_ERRORBARS}${GNUPLOT_OFFSET}${GNUPLOT_XTICS}${GNUPLOT_GRID}
         
-    GNUPLOT_BASENAME=${RUN_DESCRIPTOR//${GPU_OFFLOAD_STR}}
     #GNUPLOT_FILE_WTIME=${GNUPLOT_BASENAME}-wtime.gnuplot
     GNUPLOT_FILE_NSPERDAY=${GNUPLOT_BASENAME}-nsperday.gnuplot
     #GNUPLOT_FILE_HOURSPERNS=${GNUPLOT_BASENAME}-hoursperns.gnuplot
@@ -730,11 +731,11 @@ function plot()
 {
     # Find largest nsperday to set same y-axis scale on each plot
     #nsperday_max=$(cut -s -f 4 ${BENCHMARK_NAME}${SMT_STR}${RANKSPERNODE_STR}${THREADSPERRANK_STR}*${MDRUN_STR}${EXTRA_INFO}-nsperday.dat | sort -nr | head -n 1)
-    nsperday_max=$(cut -s -f 4 ${BENCHMARK_NAME}*${MDRUN_STR}${EXTRA_INFO}-nsperday.dat | sort -nr | head -n 1)
-    
-    #GNUPLOT_BASENAME=${BENCHMARK_NAME}${SMT_STR}${RANKSPERNODE_STR}${THREADSPERRANK_STR}${MDRUN_STR}${EXTRA_INFO}
+    nsperday_max=$(cut -s -f 4 ${BENCHMARK_NAME}*${MDRUN_STR//${GPU_OFFLOAD_STR}}${EXTRA_INFO}-nsperday.dat | sort -nr | head -n 1)
         
     echo -n "Plotting "
+
+    rm -f ${BENCHMARK_NAME}${SMT_STR}${RANKSPERNODE_STR}${THREADSPERRANK_STR}*${MDRUN_STR}${EXTRA_INFO}-nsperday.gnuplot
     
     for descriptor in ${BENCHMARK_NAME}${SMT_STR}${RANKSPERNODE_STR}${THREADSPERRANK_STR}*${MDRUN_STR}${EXTRA_INFO}-nsperday.dat
     do
